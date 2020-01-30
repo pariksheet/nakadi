@@ -32,7 +32,7 @@ public class EventTypeCache {
     private final TimelineDbRepository timelineRepository;
     private final TimelineSync timelineSync;
     private final ZookeeperNodeInvalidator nodeInvalidator;
-    private final Map<String, TimelineSync.ListenerRegistration> timelineRegistrations = new ConcurrentHashMap<>();
+    private volatile TimelineSync.ListenerRegistration timelinesListenerRegistration;
 
     @Autowired
     public EventTypeCache(
@@ -57,21 +57,19 @@ public class EventTypeCache {
     @PostConstruct
     public void start() {
         this.nodeInvalidator.start();
+        this.timelineSync.registerTimelineChangeListener(this::timelinesForEventTypeChanged);
     }
 
     @PreDestroy
     public void stop() {
+        timelinesListenerRegistration.cancel();
+        timelinesListenerRegistration = null;
         this.nodeInvalidator.stop();
-        this.timelineRegistrations.forEach((s, listenerRegistration) -> listenerRegistration.cancel());
-        this.timelineRegistrations.clear();
     }
 
     private CachedValue convertAndRegister(final EventTypeDataProvider.VersionedEventType versionedEventType) {
         final List<Timeline> timelines =
                 timelineRepository.listTimelinesOrdered(versionedEventType.getEventType().getName());
-
-        timelineRegistrations.computeIfAbsent(versionedEventType.getKey(), n ->
-                timelineSync.registerTimelineChangeListener(n, cache::invalidate));
 
         return new CachedValue(
                 versionedEventType.getEventType(),
@@ -81,20 +79,20 @@ public class EventTypeCache {
     }
 
     public void updated(final String name) {
+        // remove locally
         cache.invalidate(name);
-        created(name);
+        // trigger other caches invalidation
+        nodeInvalidator.notifyUpdate();
     }
 
-    public void created(final String name) {
-        nodeInvalidator.notifyUpdate();
-        timelineRegistrations.computeIfAbsent(name,
-                n -> timelineSync.registerTimelineChangeListener(n, cache::invalidate));
+    private void timelinesForEventTypeChanged(final String eventType) {
+        cache.invalidate(eventType);
     }
 
     public void removed(final String name) {
+        // remove locally
         cache.invalidate(name);
-        Optional.ofNullable(timelineRegistrations.remove(name))
-                .ifPresent(TimelineSync.ListenerRegistration::cancel);
+        // trigger update of remote caches. How timelines know about this???
         nodeInvalidator.notifyUpdate();
     }
 

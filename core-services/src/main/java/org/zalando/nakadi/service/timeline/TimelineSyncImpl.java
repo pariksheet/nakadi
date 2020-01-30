@@ -63,6 +63,7 @@ public class TimelineSyncImpl implements TimelineSync {
     private final String nodeId;
     private final LocalLocking localLocking = new LocalLocking();
     private final Map<String, List<Consumer<String>>> consumerListeners = new HashMap<>();
+    private final List<Consumer<String>> headlessConsumerListeners = new ArrayList<>();
     private final BlockingQueue<DelayedChange> queuedChanges = new LinkedBlockingQueue<>();
     private final AtomicBoolean newVersionPresent = new AtomicBoolean(true);
 
@@ -368,4 +369,15 @@ public class TimelineSyncImpl implements TimelineSync {
         };
     }
 
+    @Override
+    public ListenerRegistration registerTimelineChangeListener(final Consumer<String> listener) {
+        synchronized (headlessConsumerListeners) {
+            headlessConsumerListeners.add(listener);
+        }
+        return () -> {
+            synchronized (headlessConsumerListeners) {
+                headlessConsumerListeners.remove(listener);
+            }
+        };
+    }
 }

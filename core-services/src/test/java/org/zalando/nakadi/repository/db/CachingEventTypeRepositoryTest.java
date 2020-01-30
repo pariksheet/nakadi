@@ -39,7 +39,7 @@ public class CachingEventTypeRepositoryTest {
         Mockito
                 .doThrow(Exception.class)
                 .when(cache)
-                .created("event-name");
+                .updated("event-name");
 
         try {
             cachedRepo.saveEventType(et);
